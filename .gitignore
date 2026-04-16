@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.env
+
+# macOS
+.DS_Store
+
+# Excel files — never push data to GitHub
+*.xlsx
+*.xls
+~$*.xlsx
+
+# Streamlit cache
+.streamlit/
