@@ -791,17 +791,21 @@ with st.sidebar:
 
     if df_raw is not None:
         st.markdown('<div class="sid-label">Filter Results</div>', unsafe_allow_html=True)
-        all_div  = sorted(df_raw["Division"].dropna().unique())
-        sel_div  = st.multiselect("Division",        all_div,  default=[])
-        all_yr   = sorted(df_raw["Fiscal_Year"].dropna().unique())
-        sel_yr   = st.multiselect("Fiscal Year",     all_yr,   default=[])
-        all_unit = sorted(df_raw["Unit"].dropna().unique())
-        sel_unit = st.multiselect("Unit (optional)", all_unit, default=[])
+        all_yr  = sorted(df_raw["Fiscal_Year"].dropna().unique())
+        sel_yr  = st.multiselect("Fiscal Year", all_yr,  default=[])
+
+        all_div = sorted(df_raw["Division"].dropna().unique())
+        sel_div = st.multiselect("Division",    all_div, default=[])
+
+        # Bureau list scoped to selected divisions (or all if none chosen)
+        div_scope   = sel_div if sel_div else all_div
+        all_bureau  = sorted(df_raw[df_raw["Division"].isin(div_scope)]["Bureau"].dropna().unique())
+        sel_bureau  = st.multiselect("Bureau",      all_bureau, default=[])
 
         df = df_raw.copy()
-        if sel_div:  df = df[df["Division"].isin(sel_div)]
-        if sel_yr:   df = df[df["Fiscal_Year"].isin(sel_yr)]
-        if sel_unit: df = df[df["Unit"].isin(sel_unit)]
+        if sel_yr:     df = df[df["Fiscal_Year"].isin(sel_yr)]
+        if sel_div:    df = df[df["Division"].isin(sel_div)]
+        if sel_bureau: df = df[df["Bureau"].isin(sel_bureau)]
 
         with st.expander("Replace data file"):
             new_file = st.file_uploader("New file", type=["xlsx","csv"],
