@@ -113,7 +113,7 @@ html, body, [class*="css"] {
 hr { border-color: #E2E8F0 !important; margin: 1rem 0 !important; }
 
 /* ── Sidebar brand ── */
-.sid-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.sid-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .sid-icon {
     width: 40px; height: 40px; background: linear-gradient(135deg, #10B981, #059669);
     border-radius: 12px; display: flex; align-items: center; justify-content: center;
@@ -765,17 +765,6 @@ with st.sidebar:
     df_raw = st.session_state.df_raw
 
     if df_raw is not None:
-        fy_min = df_raw["Fiscal_Year"].min()
-        fy_max = df_raw["Fiscal_Year"].max()
-        fy_lbl = fy_min if fy_min == fy_max else f"{fy_min}–{fy_max}"
-        st.markdown(f"""
-        <div class="sid-label">Loaded File</div>
-        <div class="sid-file-card">
-            <div class="sid-file-name"><span class="sid-file-dot">●</span>{st.session_state.file_name}</div>
-            <div class="sid-file-meta">{len(df_raw):,} findings &nbsp;·&nbsp; FY {fy_lbl}
-            &nbsp;·&nbsp; {df_raw['Bureau'].nunique()} bureaus</div>
-        </div>""", unsafe_allow_html=True)
-
         st.markdown('<div class="sid-label">Filter Results</div>', unsafe_allow_html=True)
         all_div  = sorted(df_raw["Division"].dropna().unique())
         sel_div  = st.multiselect("Division",        all_div,  default=[])
@@ -864,7 +853,6 @@ ranked = compute_risk_scores(df)
 st.markdown("""
 <div class="rid-page-header">
     <h1>Audit Risk Intelligence Dashboard</h1>
-    <p>NYC Department of Health and Mental Hygiene — Internal Audit Unit</p>
 </div>""", unsafe_allow_html=True)
 
 render_kpis(df, ranked)
