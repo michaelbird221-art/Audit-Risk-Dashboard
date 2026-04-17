@@ -1086,6 +1086,52 @@ with tab_landscape:
         <p>A consolidated view of risk distribution, issue types, and audit coverage across the organization.</p>
     </div>""", unsafe_allow_html=True)
 
+    # ── All divisions ranked bar ───────────────────────────────────────────────
+    section("All Divisions Ranked by Risk Score",
+            "Weighted average of bureau risk scores within each division. "
+            "Red = high risk, amber = medium, green = lower risk.")
+
+    div_ranked = (
+        ranked.groupby("Division")
+        .apply(lambda g: pd.Series({
+            "Risk Score": round(np.average(g["Risk Score"], weights=np.ones(len(g))), 1),
+            "Bureau Count": len(g),
+        }))
+        .reset_index()
+        .sort_values("Risk Score", ascending=False)
+    )
+    div_ranked["Risk Tier"] = div_ranked["Risk Score"].apply(
+        lambda s: "High" if s >= 60 else ("Medium" if s >= 35 else "Low")
+    )
+    div_ranked_plot = div_ranked.sort_values("Risk Score", ascending=True)
+
+    fig_div = go.Figure(go.Bar(
+        x=div_ranked_plot["Risk Score"],
+        y=div_ranked_plot["Division"],
+        orientation="h",
+        marker_color=[TIER_CLR[t] for t in div_ranked_plot["Risk Tier"]],
+        marker_line_width=0,
+        text=div_ranked_plot["Risk Score"].apply(lambda v: f"{v:.0f}"),
+        textposition="inside",
+        textfont=dict(color="white", size=12, family="Inter"),
+        customdata=div_ranked_plot[["Risk Tier", "Bureau Count"]].values,
+        hovertemplate=(
+            "<b>%{y}</b><br>Score: %{x:.1f} — %{customdata[0]} Risk<br>"
+            "Bureaus: %{customdata[1]}<extra></extra>"
+        ),
+    ))
+    fig_div.update_layout(
+        **chart_base(height=max(180, len(div_ranked_plot) * 44 + 40),
+                     margin=dict(l=230, r=60, t=10, b=10)),
+        xaxis=dict(range=[0, 105], showgrid=True, gridcolor="#F1F5F9",
+                   title=dict(text="Risk Score (0–100)", font=dict(size=14, color="#111111")),
+                   tickfont=dict(size=12, color="#111111")),
+        yaxis=dict(showgrid=False, title="", tickfont=dict(size=12, color="#111111")),
+    )
+    st.plotly_chart(fig_div, use_container_width=True)
+
+    spacer()
+
     # ── All bureaus ranked bar ─────────────────────────────────────────────────
     section("All Bureaus Ranked by Risk Score",
             "Score is 0–100. Red = high risk, amber = medium, green = lower risk.")
