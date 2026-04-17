@@ -37,6 +37,8 @@ REQUIRED_COLUMNS = [
 if "df_raw" not in st.session_state:
     st.session_state.df_raw    = None
     st.session_state.file_name = ""
+if "ai_running" not in st.session_state:
+    st.session_state.ai_running = False
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CSS
@@ -245,6 +247,29 @@ hr { border-color: #E2E8F0 !important; margin: 1rem 0 !important; }
 .priority-why {
     font-size: 0.73rem; color: #475569; line-height: 1.5;
     font-style: italic; margin-top: 6px;
+}
+
+/* ── Suppress top-right running indicator / stop button ── */
+[data-testid="stStatusWidget"] { display: none !important; }
+header [data-testid="stToolbar"] { display: none !important; }
+
+/* ── AI loading card ── */
+.ai-loading-card {
+    background: #FFFFFF; border: 1px solid #A7F3D0; border-left: 4px solid #10B981;
+    border-radius: 0 12px 12px 0; padding: 20px 24px; margin-top: 16px;
+    display: flex; align-items: flex-start; gap: 16px;
+}
+.ai-loading-spinner {
+    width: 20px; height: 20px; border: 2.5px solid #D1FAE5;
+    border-top-color: #10B981; border-radius: 50%;
+    animation: ai-spin 0.8s linear infinite; flex-shrink: 0; margin-top: 2px;
+}
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-loading-text-primary {
+    font-size: 0.9rem; font-weight: 600; color: #064E3B; margin-bottom: 4px;
+}
+.ai-loading-text-secondary {
+    font-size: 0.78rem; color: #065F46; line-height: 1.5;
 }
 
 /* ── AI box ── */
@@ -1314,32 +1339,52 @@ with tab_ai:
         "audit planning recommendations — written at the Deputy Commissioner level."
     )
 
-    if st.button("Generate AI Risk Briefing", type="primary"):
+    btn_clicked = st.button(
+        "Generating AI Risk Briefing…" if st.session_state.ai_running else "Generate AI Risk Briefing",
+        type="primary",
+        disabled=st.session_state.ai_running,
+    )
+
+    output_slot = st.empty()
+
+    if btn_clicked:
         if ranked.empty:
-            st.warning("No data available to generate a briefing.")
+            output_slot.warning("No data available to generate a briefing.")
         else:
             api_key = os.environ.get("ANTHROPIC_API_KEY")
             if not api_key:
-                st.error("**ANTHROPIC_API_KEY not set.**  \n"
-                         "```bash\nexport ANTHROPIC_API_KEY=sk-ant-...\n```")
+                output_slot.error("**ANTHROPIC_API_KEY not set.**  \n"
+                                  "```bash\nexport ANTHROPIC_API_KEY=sk-ant-...\n```")
             else:
-                prompt = build_ai_prompt(df, ranked)
-                with st.spinner("Writing your risk briefing…"):
-                    try:
-                        client = anthropic.Anthropic(api_key=api_key)
-                        msg    = client.messages.create(
-                            model="claude-sonnet-4-5", max_tokens=2000,
-                            messages=[{"role": "user", "content": prompt}],
-                        )
-                        narrative = msg.content[0].text
-                        st.markdown(
-                            f'<div class="rid-ai-box">{narrative}</div>',
-                            unsafe_allow_html=True,
-                        )
-                    except anthropic.AuthenticationError:
-                        st.error("Invalid API key. Check your ANTHROPIC_API_KEY.")
-                    except Exception as exc:
-                        st.error(f"API error: {exc}")
+                st.session_state.ai_running = True
+                output_slot.markdown("""
+                <div class="ai-loading-card">
+                    <div class="ai-loading-spinner"></div>
+                    <div>
+                        <div class="ai-loading-text-primary">Generating AI Risk Briefing…</div>
+                        <div class="ai-loading-text-secondary">
+                            Analyzing risk patterns and drafting executive summary.<br>
+                            This usually takes 10–20 seconds.
+                        </div>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+                try:
+                    client = anthropic.Anthropic(api_key=api_key)
+                    msg    = client.messages.create(
+                        model="claude-sonnet-4-5", max_tokens=2000,
+                        messages=[{"role": "user", "content": build_ai_prompt(df, ranked)}],
+                    )
+                    narrative = msg.content[0].text
+                    output_slot.markdown(
+                        f'<div class="rid-ai-box">{narrative}</div>',
+                        unsafe_allow_html=True,
+                    )
+                except anthropic.AuthenticationError:
+                    output_slot.error("Invalid API key. Check your ANTHROPIC_API_KEY.")
+                except Exception as exc:
+                    output_slot.error(f"API error: {exc}")
+                finally:
+                    st.session_state.ai_running = False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
