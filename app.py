@@ -841,6 +841,7 @@ def compute_program_scores(df: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
         records.append({
             "Program Name":      prog,
             "Bureau":            pdf["Bureau"].iloc[0],
+            "Division":          pdf["Division"].iloc[0],
             "Risk Score":        round(score, 1),
             "Open Critical":     open_high,
             "Repeat Rate":       round(repeat_norm * 100, 1),
@@ -870,7 +871,7 @@ def render_program_risk_table(prog_df: pd.DataFrame):
       <div class="prog-table-head">
         <div></div>
         <div>Program</div>
-        <div>Bureau</div>
+        <div>Division</div>
         <div>Risk Score</div>
         <div>Open Critical</div>
         <div>Repeat Rate</div>
@@ -894,7 +895,7 @@ def render_program_risk_table(prog_df: pd.DataFrame):
           <div class="prog-name">{row['Program Name']}</div>
           <div class="prog-bureau">{row['Bureau']}</div>
         </div>
-        <div style="font-size:0.75rem;color:#475569">{row['Bureau']}</div>
+        <div style="font-size:0.75rem;color:#475569">{row['Division']}</div>
         <div class="prog-score-cell">
           <div class="prog-score-bar-wrap">
             <div class="prog-score-bar" style="width:{bar_w}%;background:{color}"></div>
