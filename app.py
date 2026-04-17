@@ -1094,8 +1094,9 @@ with tab_landscape:
     div_ranked = (
         ranked.groupby("Division")
         .apply(lambda g: pd.Series({
-            "Risk Score": round(np.average(g["Risk Score"], weights=np.ones(len(g))), 1),
-            "Bureau Count": len(g),
+            "Risk Score":      round(np.average(g["Risk Score"], weights=np.ones(len(g))), 1),
+            "Bureau Count":    len(g),
+            "High Risk Count": int((g["Risk Score"] >= 60).sum()),
         }))
         .reset_index()
         .sort_values("Risk Score", ascending=False)
@@ -1103,26 +1104,34 @@ with tab_landscape:
     div_ranked["Risk Tier"] = div_ranked["Risk Score"].apply(
         lambda s: "High" if s >= 60 else ("Medium" if s >= 35 else "Low")
     )
+    def _div_label(row):
+        n = int(row["High Risk Count"])
+        if n == 0:
+            return row["Division"]
+        noun = "high-risk bureau" if n == 1 else "high-risk bureaus"
+        return f"{row['Division']}  ({n} {noun})"
+    div_ranked["Label"] = div_ranked.apply(_div_label, axis=1)
     div_ranked_plot = div_ranked.sort_values("Risk Score", ascending=True)
 
     fig_div = go.Figure(go.Bar(
         x=div_ranked_plot["Risk Score"],
-        y=div_ranked_plot["Division"],
+        y=div_ranked_plot["Label"],
         orientation="h",
         marker_color=[TIER_CLR[t] for t in div_ranked_plot["Risk Tier"]],
         marker_line_width=0,
         text=div_ranked_plot["Risk Score"].apply(lambda v: f"{v:.0f}"),
         textposition="inside",
         textfont=dict(color="white", size=12, family="Inter"),
-        customdata=div_ranked_plot[["Risk Tier", "Bureau Count"]].values,
+        customdata=div_ranked_plot[["Risk Tier", "Bureau Count", "High Risk Count"]].values,
         hovertemplate=(
-            "<b>%{y}</b><br>Score: %{x:.1f} — %{customdata[0]} Risk<br>"
-            "Bureaus: %{customdata[1]}<extra></extra>"
+            "<b>%{customdata[0]} Risk</b> — Score %{x:.1f}<br>"
+            "Total bureaus: %{customdata[1]}<br>"
+            "High-risk bureaus: %{customdata[2]}<extra></extra>"
         ),
     ))
     fig_div.update_layout(
         **chart_base(height=max(180, len(div_ranked_plot) * 44 + 40),
-                     margin=dict(l=230, r=60, t=10, b=10)),
+                     margin=dict(l=310, r=60, t=10, b=10)),
         xaxis=dict(range=[0, 105], showgrid=True, gridcolor="#F1F5F9",
                    title=dict(text="Risk Score (0–100)", font=dict(size=14, color="#111111")),
                    tickfont=dict(size=12, color="#111111")),
