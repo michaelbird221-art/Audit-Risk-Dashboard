@@ -1057,12 +1057,8 @@ with tab_overview:
     st.markdown(f'<div class="insight-banner">💡 {insight_text}</div>',
                 unsafe_allow_html=True)
 
-    # ── Recommended audit actions ──────────────────────────────────────────────
-    actions = generate_recommended_actions(ranked, df)
-    render_recommended_actions(actions)
-    spacer()
-
     # ── Top 3 priority cards ───────────────────────────────────────────────────
+    spacer()
     st.markdown('<div class="priority-header">Top Priority Bureaus — Ranked by Risk Exposure</div>',
                 unsafe_allow_html=True)
     render_priority_cards(ranked, df)
@@ -1071,6 +1067,11 @@ with tab_overview:
     spacer()
     prog_scores = compute_program_scores(df)
     render_program_risk_table(prog_scores)
+
+    # ── Recommended audit actions ──────────────────────────────────────────────
+    spacer()
+    actions = generate_recommended_actions(ranked, df)
+    render_recommended_actions(actions)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
