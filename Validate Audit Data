@@ -1,0 +1,169 @@
+"""
+DOHMH Risk Intelligence Dashboard — Data Validation Script
+Run this before loading any file into the Streamlit app.
+Usage: python validate_audit_data.py your_file.xlsx
+"""
+
+import sys
+import pandas as pd
+
+REQUIRED_COLUMNS = [
+    "Division", "Bureau", "Unit", "Program Name", "Audit_Title",
+    "Finding_ID", "Finding_Theme", "Root_Cause", "Risk_Level", "Fiscal_Year",
+    "Quarter", "Recommendation_Count", "CAP Days Overdue", "CAP Status",
+    "Repeat_Finding", "Control_Type", "Notes"
+]
+
+VALID_VALUES = {
+    "Risk_Level":        {"High", "Medium", "Low"},
+    "CAP Status":        {"Open", "Closed"},
+    "Repeat_Finding":    {"Yes", "No"},
+    "Quarter":           {"Q1", "Q2", "Q3", "Q4"},
+}
+
+NUMERIC_COLUMNS = ["Recommendation_Count", "CAP Days Overdue", "Fiscal_Year"]
+
+def sep(char="-", w=62): print(char * w)
+
+def check(label, passed, detail=""):
+    print(f"  [{'PASS' if passed else 'FAIL'}] {label}")
+    if detail:
+        print(f"         {detail}")
+    return passed
+
+def validate(filepath):
+    sep("=")
+    print("  DOHMH Audit Data Validator  (v2 schema)")
+    sep("=")
+    print(f"  File: {filepath}\n")
+    all_passed = True
+
+    sep()
+    print("  STEP 1: Loading file")
+    sep()
+    try:
+        df = pd.read_csv(filepath) if filepath.endswith(".csv") else \
+             pd.read_excel(filepath, engine="openpyxl")
+        check("File loaded successfully", True, f"{len(df):,} rows, {len(df.columns)} columns found")
+    except Exception as e:
+        check("File loaded successfully", False, str(e))
+        print("\n  Cannot continue — fix the file load error first.")
+        sys.exit(1)
+
+    sep()
+    print("  STEP 2: Required columns")
+    sep()
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    extra   = [c for c in df.columns if c not in REQUIRED_COLUMNS]
+    passed  = check("All required columns present", not missing,
+                    f"Missing: {missing}" if missing else f"All {len(REQUIRED_COLUMNS)} columns found")
+    if not passed: all_passed = False
+    if extra:
+        print(f"         Note — extra columns (OK): {extra}")
+
+    sep()
+    print("  STEP 3: Row count")
+    sep()
+    if not check("File has data rows", len(df) > 0, f"{len(df):,} rows"):
+        print("\n  Cannot continue — file is empty.")
+        sys.exit(1)
+    passed = check("Sufficient rows for meaningful analysis", len(df) >= 20,
+                   "Recommend 50+ rows for best results" if len(df) < 50 else f"{len(df):,} rows — good")
+    if not passed: all_passed = False
+
+    sep()
+    print("  STEP 4: Allowed values")
+    sep()
+    for col, allowed in VALID_VALUES.items():
+        if col not in df.columns: continue
+        actual = set(df[col].dropna().unique())
+        bad = actual - allowed
+        passed = check(f"{col} values valid", not bad,
+                       f"Invalid: {bad}  (expected {allowed})" if bad else f"Values: {sorted(actual)}")
+        if not passed: all_passed = False
+
+    sep()
+    print("  STEP 5: Numeric columns")
+    sep()
+    for col in NUMERIC_COLUMNS:
+        if col not in df.columns: continue
+        bad_count = pd.to_numeric(df[col], errors="coerce").isna().sum()
+        passed = check(f"{col} is numeric", bad_count == 0,
+                       f"{bad_count} non-numeric values" if bad_count else "All values numeric")
+        if not passed: all_passed = False
+
+    sep()
+    print("  STEP 6: Logical consistency")
+    sep()
+    if {"CAP Days Overdue", "CAP Status"} <= set(df.columns):
+        bad = df[(df["CAP Status"] == "Closed") & (pd.to_numeric(df["CAP Days Overdue"], errors="coerce") > 0)]
+        ok = check("Closed findings have CAP Days Overdue = 0", len(bad) == 0,
+                   f"{len(bad)} closed findings show CAP Days Overdue > 0 — set these to 0" if bad.shape[0] else "OK")
+        if not ok: all_passed = False
+
+    if "Fiscal_Year" in df.columns:
+        years = pd.to_numeric(df["Fiscal_Year"], errors="coerce").dropna()
+        bad_y = years[(years < 2015) | (years > 2030)]
+        check("Fiscal_Year values are plausible", len(bad_y) == 0,
+              f"{len(bad_y)} values outside 2015–2030" if len(bad_y) else
+              f"Range: {int(years.min())}–{int(years.max())}")
+
+    if "Recommendation_Count" in df.columns:
+        neg = (pd.to_numeric(df["Recommendation_Count"], errors="coerce") < 0).sum()
+        check("Recommendation_Count has no negatives", neg == 0,
+              f"{neg} negative values" if neg else "OK")
+
+    sep()
+    print("  STEP 7: Org hierarchy consistency")
+    sep()
+    if all(c in df.columns for c in ["Division", "Bureau"]):
+        bureau_div = df.groupby("Bureau")["Division"].nunique()
+        multi = bureau_div[bureau_div > 1]
+        check("Each Bureau belongs to exactly one Division", len(multi) == 0,
+              f"Bureaus in multiple divisions: {multi.index.tolist()}" if len(multi) else "OK")
+
+    if all(c in df.columns for c in ["Bureau", "Unit"]):
+        unit_bureau = df.groupby("Unit")["Bureau"].nunique()
+        multi = unit_bureau[unit_bureau > 1]
+        check("Each Unit belongs to exactly one Bureau", len(multi) == 0,
+              f"Units in multiple bureaus: {multi.index.tolist()}" if len(multi) else "OK")
+
+    sep()
+    print("  STEP 8: Missing values in key columns")
+    sep()
+    for col in ["Division", "Bureau", "Unit", "Risk_Level", "CAP Status", "Fiscal_Year", "Finding_Theme"]:
+        if col not in df.columns: continue
+        nulls = df[col].isna().sum()
+        passed = check(f"{col} has no blanks", nulls == 0,
+                       f"{nulls} blank values — rows excluded from scoring" if nulls else "OK")
+        if not passed: all_passed = False
+
+    sep()
+    print("  STEP 9: Data summary")
+    sep()
+    for col, label in [("Division","Divisions"), ("Bureau","Bureaus"), ("Unit","Units")]:
+        if col in df.columns:
+            print(f"         {label} ({df[col].nunique()}): {sorted(df[col].unique())}")
+    if "Risk_Level" in df.columns:
+        print(f"         Risk levels: {df['Risk_Level'].value_counts().to_dict()}")
+    if "CAP Status" in df.columns:
+        print(f"         CAP Status: {df['CAP Status'].value_counts().to_dict()}")
+    if "Fiscal_Year" in df.columns:
+        yrs = sorted([int(y) for y in pd.to_numeric(df["Fiscal_Year"], errors="coerce").dropna().unique()])
+        print(f"         Fiscal years: {yrs}")
+    if "Repeat_Finding" in df.columns:
+        print(f"         Repeat findings: {df['Repeat_Finding'].value_counts().to_dict()}")
+
+    sep("=")
+    if all_passed:
+        print("  RESULT: ALL CHECKS PASSED — file is ready for the app.")
+    else:
+        print("  RESULT: SOME CHECKS FAILED — review FAIL items above before loading.")
+    sep("=")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage:   python validate_audit_data.py <file.xlsx or file.csv>")
+        print("Example: python validate_audit_data.py DOHMH_Audit_Findings_v2.xlsx")
+        sys.exit(1)
+    validate(sys.argv[1])

@@ -27,9 +27,9 @@ AGING_CLR = {
     "180+ days":   "#7F1D1D",
 }
 REQUIRED_COLUMNS = [
-    "Division", "Bureau", "Unit", "Program_Audit_Subject", "Audit_Title",
+    "Division", "Bureau", "Unit", "Program Name", "Audit_Title",
     "Finding_ID", "Finding_Theme", "Root_Cause", "Risk_Level", "Fiscal_Year",
-    "Quarter", "Recommendation_Count", "Days_Overdue", "Status",
+    "Quarter", "Recommendation_Count", "CAP Days Overdue", "CAP Status",
     "Repeat_Finding", "Control_Type", "Notes",
 ]
 
@@ -310,7 +310,7 @@ def load_data(uploaded_file):
         return None, f"Missing required columns: {', '.join(missing)}"
 
     df["Fiscal_Year"] = df["Fiscal_Year"].astype(str)
-    df["Days_Overdue"] = pd.to_numeric(df["Days_Overdue"], errors="coerce").fillna(0).astype(int)
+    df["CAP Days Overdue"] = pd.to_numeric(df["CAP Days Overdue"], errors="coerce").fillna(0).astype(int)
     df["Recommendation_Count"] = (
         pd.to_numeric(df["Recommendation_Count"], errors="coerce").fillna(0).astype(int)
     )
@@ -330,11 +330,11 @@ def compute_risk_scores(df: pd.DataFrame) -> pd.DataFrame:
     for bureau in bureaus:
         bdf      = df[df["Bureau"] == bureau]
         division = bdf["Division"].iloc[0]
-        open_bdf = bdf[bdf["Status"] == "Open"]
+        open_bdf = bdf[bdf["CAP Status"] == "Open"]
 
         severity_norm = (bdf["Risk_Level"].map(SEV).mean() - 1) / 2
         volume_norm   = len(bdf) / max_findings
-        age_norm      = (min(open_bdf["Days_Overdue"].mean(), 365) / 365
+        age_norm      = (min(open_bdf["CAP Days Overdue"].mean(), 365) / 365
                          if len(open_bdf) > 0 else 0.0)
         repeat_norm   = (bdf["Repeat_Finding"] == "Yes").mean()
         last_year     = bdf["Fiscal_Year"].astype(int).max()
@@ -349,10 +349,10 @@ def compute_risk_scores(df: pd.DataFrame) -> pd.DataFrame:
             "Bureau":             bureau,
             "Risk Score":         round(score, 1),
             "Risk Tier":          tier,
-            "Open High Findings": int(((bdf["Status"]=="Open") & (bdf["Risk_Level"]=="High")).sum()),
+            "Open High Findings": int(((bdf["CAP Status"]=="Open") & (bdf["Risk_Level"]=="High")).sum()),
             "Repeat Finding %":   round(repeat_norm * 100, 1),
             "Last Audited":       last_year,
-            "_open_avg_days":     open_bdf["Days_Overdue"].mean() if len(open_bdf) > 0 else 0,
+            "_open_avg_days":     open_bdf["CAP Days Overdue"].mean() if len(open_bdf) > 0 else 0,
         })
 
     result = (pd.DataFrame(records)
@@ -364,19 +364,19 @@ def compute_risk_scores(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_ai_prompt(df: pd.DataFrame, ranked: pd.DataFrame) -> str:
     n         = len(df)
-    open_ct   = int((df["Status"] == "Open").sum())
+    open_ct   = int((df["CAP Status"] == "Open").sum())
     repeat_ct = int((df["Repeat_Finding"] == "Yes").sum())
     repeat_pct = repeat_ct / n * 100 if n > 0 else 0
 
-    overdue_mask = (df["Status"] == "Open") & (df["Days_Overdue"] > 0)
+    overdue_mask = (df["CAP Status"] == "Open") & (df["CAP Days Overdue"] > 0)
     overdue_ct   = int(overdue_mask.sum())
-    avg_overdue  = df.loc[overdue_mask, "Days_Overdue"].mean() if overdue_ct > 0 else 0
+    avg_overdue  = df.loc[overdue_mask, "CAP Days Overdue"].mean() if overdue_ct > 0 else 0
 
     yearly = (df.groupby("Fiscal_Year").agg(
         total  =("Finding_ID",    "count"),
         high   =("Risk_Level",    lambda x: (x=="High").sum()),
         repeat =("Repeat_Finding",lambda x: (x=="Yes").sum()),
-        open   =("Status",        lambda x: (x=="Open").sum()),
+        open   =("CAP Status",        lambda x: (x=="Open").sum()),
     ).sort_index())
     yearly_txt = "\n".join(
         f"  FY{yr}: {r['total']} total | {r['high']} high-risk | "
@@ -402,14 +402,14 @@ def build_ai_prompt(df: pd.DataFrame, ranked: pd.DataFrame) -> str:
     repeat_lines = [f"  • {r['Bureau']}: {r['Repeat Finding %']:.1f}% repeat rate"
                     for _, r in top5_repeat.iterrows()]
 
-    overdue_bur = (df[overdue_mask].groupby("Bureau")["Days_Overdue"]
+    overdue_bur = (df[overdue_mask].groupby("Bureau")["CAP Days Overdue"]
                    .agg(count="count", avg="mean")
                    .sort_values("count", ascending=False).head(5))
     overdue_lines = [f"  • {b}: {r['count']} items overdue (avg {r['avg']:.0f} days)"
                      for b, r in overdue_bur.iterrows()]
 
     theme_lines = [f"  • {t}: {c} open findings"
-                   for t, c in (df[df["Status"]=="Open"]["Finding_Theme"]
+                   for t, c in (df[df["CAP Status"]=="Open"]["Finding_Theme"]
                                 .value_counts().head(5).items())]
 
     return f"""You are a senior internal audit risk analyst at the NYC Department of Health and Mental Hygiene (DOHMH) preparing a briefing for the Deputy Commissioner and Chief Audit Executive.
@@ -485,14 +485,14 @@ def kpi_card(icon, icon_cls, value, label, badge="", badge_cls="b-gray"):
 
 def render_kpis(df: pd.DataFrame, ranked: pd.DataFrame):
     n         = len(df)
-    open_ct   = int((df["Status"] == "Open").sum())
+    open_ct   = int((df["CAP Status"] == "Open").sum())
     closed_ct = n - open_ct
-    open_high = int(((df["Status"] == "Open") & (df["Risk_Level"] == "High")).sum())
+    open_high = int(((df["CAP Status"] == "Open") & (df["Risk_Level"] == "High")).sum())
     repeat_ct = int((df["Repeat_Finding"] == "Yes").sum())
     repeat_pct = repeat_ct / n * 100 if n > 0 else 0.0
-    ov_mask    = (df["Status"] == "Open") & (df["Days_Overdue"] > 0)
+    ov_mask    = (df["CAP Status"] == "Open") & (df["CAP Days Overdue"] > 0)
     overdue_ct = int(ov_mask.sum())
-    avg_od     = df.loc[ov_mask, "Days_Overdue"].mean() if overdue_ct > 0 else 0.0
+    avg_od     = df.loc[ov_mask, "CAP Days Overdue"].mean() if overdue_ct > 0 else 0.0
     total_b    = len(ranked) if not ranked.empty else df["Bureau"].nunique()
     elevated   = int((ranked["Risk Tier"].isin(["High","Medium"])).sum()) if not ranked.empty else 0
 
@@ -603,9 +603,9 @@ def generate_recommended_actions(ranked: pd.DataFrame, df: pd.DataFrame) -> list
 
 def generate_summary_insight(df: pd.DataFrame, ranked: pd.DataFrame) -> str:
     """Generate a 1–2 sentence risk insight from the loaded data."""
-    open_ct    = int((df["Status"] == "Open").sum())
+    open_ct    = int((df["CAP Status"] == "Open").sum())
     repeat_pct = (df["Repeat_Finding"] == "Yes").mean() * 100
-    ov_mask    = (df["Status"] == "Open") & (df["Days_Overdue"] > 0)
+    ov_mask    = (df["CAP Status"] == "Open") & (df["CAP Days Overdue"] > 0)
     overdue_ct = int(ov_mask.sum())
     high_ct    = int((ranked["Risk Tier"] == "High").sum()) if not ranked.empty else 0
     top_bureau = ranked.iloc[0]["Bureau"] if not ranked.empty else "N/A"
@@ -964,7 +964,7 @@ with tab_landscape:
                 "Bar length = open findings. Color intensity = proportion that are critical.")
 
         theme_stats = (
-            df[df["Status"] == "Open"]
+            df[df["CAP Status"] == "Open"]
             .groupby("Finding_Theme")
             .agg(Open    =("Finding_ID", "count"),
                  High_Pct=("Risk_Level", lambda x: (x == "High").mean() * 100))
@@ -1142,13 +1142,13 @@ with tab_repeat:
             "Each bar shows one bureau's overdue open findings, broken down by age. "
             "Darker shades signal longer-neglected issues — the most urgent CAP backlog.")
 
-    overdue_df = df[(df["Status"] == "Open") & (df["Days_Overdue"] > 0)].copy()
+    overdue_df = df[(df["CAP Status"] == "Open") & (df["CAP Days Overdue"] > 0)].copy()
 
     if overdue_df.empty:
         st.info("No overdue open findings in the current selection — corrective actions are on track.")
     else:
         overdue_df["Aging Bucket"] = pd.cut(
-            overdue_df["Days_Overdue"],
+            overdue_df["CAP Days Overdue"],
             bins=[0, 30, 60, 90, 180, float("inf")],
             labels=list(AGING_CLR.keys()),
         )
@@ -1200,7 +1200,7 @@ with tab_trends:
         df.groupby("Fiscal_Year")
         .agg(High_Risk=("Risk_Level",     lambda x: (x=="High").sum()),
              Recurring =("Repeat_Finding", lambda x: (x=="Yes").sum()),
-             Open      =("Status",         lambda x: (x=="Open").sum()))
+             Open      =("CAP Status",         lambda x: (x=="Open").sum()))
         .reset_index()
         .melt(id_vars="Fiscal_Year", var_name="Category", value_name="Count")
     )
@@ -1231,8 +1231,8 @@ with tab_trends:
             "Green = findings that were closed. Red = findings still open. "
             "A growing red portion means the backlog is accumulating faster than it's being resolved.")
 
-    bar_data = df.groupby(["Fiscal_Year","Status"]).size().reset_index(name="Count")
-    fig_bar = px.bar(bar_data, x="Fiscal_Year", y="Count", color="Status",
+    bar_data = df.groupby(["Fiscal_Year","CAP Status"]).size().reset_index(name="Count")
+    fig_bar = px.bar(bar_data, x="Fiscal_Year", y="Count", color="CAP Status",
                      barmode="stack",
                      color_discrete_map={"Open":"#EF4444","Closed":"#10B981"})
     fig_bar.update_traces(marker_line_width=0)
@@ -1279,7 +1279,7 @@ with tab_heat:
         "Bureaus with dark cells across multiple columns have broad, systemic exposure."
     )
 
-    open_df = df[df["Status"] == "Open"]
+    open_df = df[df["CAP Status"] == "Open"]
     if open_df.empty:
         st.info("No open findings in the current selection.")
     else:
