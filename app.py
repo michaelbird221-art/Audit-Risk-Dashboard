@@ -120,7 +120,7 @@ hr { border-color: #E2E8F0 !important; margin: 1rem 0 !important; }
     font-size: 19px; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16,185,129,0.28);
 }
 .sid-name  { font-size: 0.9rem; font-weight: 700; color: #0F172A; letter-spacing: -0.2px; line-height: 1.2; }
-.sid-sub   { font-size: 0.68rem; color: #94A3B8; font-weight: 500; }
+.sid-sub   { font-size: 0.68rem; color: #0F172A; font-weight: 500; }
 .sid-label { font-size: 0.67rem; font-weight: 700; color: #94A3B8;
              text-transform: uppercase; letter-spacing: 0.7px; margin: 20px 0 8px 0; }
 .sid-file-card { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px;
@@ -759,7 +759,7 @@ with st.sidebar:
     <div class="sid-brand">
         <div class="sid-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg></div>
         <div><div class="sid-name">NYC DOHMH</div>
-        <div class="sid-sub">Internal Audit Unit</div></div>
+        <div class="sid-sub">Audit Services</div></div>
     </div>""", unsafe_allow_html=True)
 
     df_raw = st.session_state.df_raw
@@ -778,18 +778,17 @@ with st.sidebar:
 
         st.markdown('<div class="sid-label">Filter Results</div>', unsafe_allow_html=True)
         all_div  = sorted(df_raw["Division"].dropna().unique())
-        sel_div  = st.multiselect("Division",        all_div,  default=list(all_div))
+        sel_div  = st.multiselect("Division",        all_div,  default=[])
         all_yr   = sorted(df_raw["Fiscal_Year"].dropna().unique())
-        sel_yr   = st.multiselect("Fiscal Year",     all_yr,   default=list(all_yr))
+        sel_yr   = st.multiselect("Fiscal Year",     all_yr,   default=[])
         all_unit = sorted(df_raw["Unit"].dropna().unique())
-        sel_unit = st.multiselect("Unit (optional)", all_unit, default=list(all_unit))
+        sel_unit = st.multiselect("Unit (optional)", all_unit, default=[])
 
         df = df_raw.copy()
         if sel_div:  df = df[df["Division"].isin(sel_div)]
         if sel_yr:   df = df[df["Fiscal_Year"].isin(sel_yr)]
         if sel_unit: df = df[df["Unit"].isin(sel_unit)]
 
-        st.markdown('<div class="sid-label" style="margin-top:24px">Data</div>', unsafe_allow_html=True)
         with st.expander("Replace data file"):
             new_file = st.file_uploader("New file", type=["xlsx","csv"],
                                         key="sidebar_upload", label_visibility="collapsed")
