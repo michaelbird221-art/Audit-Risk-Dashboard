@@ -249,6 +249,44 @@ hr { border-color: #E2E8F0 !important; margin: 1rem 0 !important; }
     font-style: italic; margin-top: 6px;
 }
 
+/* ── Programs Driving Risk table ── */
+.prog-table-wrap {
+    background: #FFFFFF; border-radius: 14px; overflow: hidden;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 14px rgba(0,0,0,0.05);
+    margin-top: 4px;
+}
+.prog-table-head {
+    display: grid;
+    grid-template-columns: 28px 1fr 140px 80px 80px 80px 100px;
+    gap: 0; padding: 9px 18px;
+    background: #F8FAFC; border-bottom: 1px solid #E2E8F0;
+    font-size: 0.65rem; font-weight: 700; color: #94A3B8;
+    text-transform: uppercase; letter-spacing: 0.6px;
+}
+.prog-table-row {
+    display: grid;
+    grid-template-columns: 28px 1fr 140px 80px 80px 80px 100px;
+    gap: 0; padding: 11px 18px; align-items: center;
+    border-bottom: 1px solid #F1F5F9; transition: background 0.12s;
+}
+.prog-table-row:last-child { border-bottom: none; }
+.prog-table-row:hover { background: #F8FAFC; }
+.prog-rank { font-size: 0.72rem; font-weight: 700; color: #CBD5E1; }
+.prog-name { font-size: 0.83rem; font-weight: 600; color: #0F172A; line-height: 1.3; }
+.prog-bureau { font-size: 0.69rem; color: #94A3B8; margin-top: 1px; }
+.prog-score-cell { display: flex; align-items: center; gap: 7px; }
+.prog-score-bar-wrap {
+    flex: 1; height: 5px; background: #F1F5F9; border-radius: 3px; overflow: hidden;
+}
+.prog-score-bar { height: 100%; border-radius: 3px; }
+.prog-score-num { font-size: 0.78rem; font-weight: 700; color: #0F172A; min-width: 28px; text-align: right; }
+.prog-cell { font-size: 0.78rem; color: #475569; }
+.prog-badge {
+    display: inline-block; font-size: 0.63rem; font-weight: 600;
+    padding: 2px 7px; border-radius: 20px;
+}
+
 /* ── Suppress top-right running indicator / stop button ── */
 [data-testid="stStatusWidget"] { display: none !important; }
 header [data-testid="stToolbar"] { display: none !important; }
@@ -773,6 +811,110 @@ def render_priority_cards(ranked: pd.DataFrame, df: pd.DataFrame):
         </div>""", unsafe_allow_html=True)
 
 
+def compute_program_scores(df: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
+    """Score and rank programs (Program Name) using the same factor logic as bureaus."""
+    if df.empty or "Program Name" not in df.columns:
+        return pd.DataFrame()
+
+    programs     = df["Program Name"].dropna().unique()
+    max_findings = max(df.groupby("Program Name").size().max(), 1)
+    SEV          = {"High": 3, "Medium": 2, "Low": 1}
+
+    records = []
+    for prog in programs:
+        pdf      = df[df["Program Name"] == prog]
+        open_pdf = pdf[pdf["CAP Status"] == "Open"]
+
+        severity_norm = (pdf["Risk_Level"].map(SEV).mean() - 1) / 2
+        volume_norm   = len(pdf) / max_findings
+        age_norm      = (min(open_pdf["CAP Days Overdue"].mean(), 365) / 365
+                         if len(open_pdf) > 0 else 0.0)
+        repeat_norm   = (pdf["Repeat_Finding"] == "Yes").mean()
+
+        # Programs don't have a recency dimension — redistribute weight evenly
+        score = (severity_norm * 0.38 + volume_norm * 0.27 +
+                 age_norm * 0.22 + repeat_norm * 0.13) * 100
+
+        open_high = int(((pdf["CAP Status"] == "Open") & (pdf["Risk_Level"] == "High")).sum())
+        avg_days  = round(open_pdf["CAP Days Overdue"].mean(), 0) if len(open_pdf) > 0 else 0
+
+        records.append({
+            "Program Name":      prog,
+            "Bureau":            pdf["Bureau"].iloc[0],
+            "Risk Score":        round(score, 1),
+            "Open Critical":     open_high,
+            "Repeat Rate":       round(repeat_norm * 100, 1),
+            "Avg Days Overdue":  int(avg_days),
+        })
+
+    return (pd.DataFrame(records)
+            .sort_values("Risk Score", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True))
+
+
+def render_program_risk_table(prog_df: pd.DataFrame):
+    """Render the Programs Driving Risk Exposure section."""
+    section("Programs Driving Risk Exposure",
+            "Top program areas contributing to risk within the current selection.")
+
+    if prog_df.empty:
+        st.info("No program data available for the current selection.")
+        return
+
+    tier_color = lambda s: "#EF4444" if s >= 60 else ("#F59E0B" if s >= 35 else "#10B981")
+    badge_cls  = lambda s: "b-red"   if s >= 60 else ("b-orange" if s >= 35 else "b-green")
+
+    header_html = """
+    <div class="prog-table-wrap">
+      <div class="prog-table-head">
+        <div></div>
+        <div>Program</div>
+        <div>Bureau</div>
+        <div>Risk Score</div>
+        <div>Open Critical</div>
+        <div>Repeat Rate</div>
+        <div>Avg Days Overdue</div>
+      </div>"""
+
+    rows_html = ""
+    for i, row in prog_df.iterrows():
+        rank   = i + 1
+        score  = row["Risk Score"]
+        color  = tier_color(score)
+        bcls   = badge_cls(score)
+        bar_w  = int(score)
+        od     = row["Avg Days Overdue"]
+        od_cls = "b-red" if od >= 90 else ("b-orange" if od >= 30 else "b-gray")
+
+        rows_html += f"""
+      <div class="prog-table-row">
+        <div class="prog-rank">#{rank}</div>
+        <div>
+          <div class="prog-name">{row['Program Name']}</div>
+          <div class="prog-bureau">{row['Bureau']}</div>
+        </div>
+        <div style="font-size:0.75rem;color:#475569">{row['Bureau']}</div>
+        <div class="prog-score-cell">
+          <div class="prog-score-bar-wrap">
+            <div class="prog-score-bar" style="width:{bar_w}%;background:{color}"></div>
+          </div>
+          <span class="prog-score-num" style="color:{color}">{score:.0f}</span>
+        </div>
+        <div class="prog-cell">
+          <span class="prog-badge {bcls if row['Open Critical'] > 0 else 'b-gray'}">
+            {row['Open Critical']}
+          </span>
+        </div>
+        <div class="prog-cell">{row['Repeat Rate']:.0f}%</div>
+        <div class="prog-cell">
+          <span class="prog-badge {od_cls}">{od}d</span>
+        </div>
+      </div>"""
+
+    st.markdown(header_html + rows_html + "</div>", unsafe_allow_html=True)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Sidebar
 # ══════════════════════════════════════════════════════════════════════════════
@@ -923,6 +1065,11 @@ with tab_overview:
     st.markdown('<div class="priority-header">Top Priority Bureaus — Ranked by Risk Exposure</div>',
                 unsafe_allow_html=True)
     render_priority_cards(ranked, df)
+
+    # ── Programs driving risk ──────────────────────────────────────────────────
+    spacer()
+    prog_scores = compute_program_scores(df)
+    render_program_risk_table(prog_scores)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
