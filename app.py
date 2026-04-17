@@ -562,8 +562,8 @@ def render_kpis(df: pd.DataFrame, ranked: pd.DataFrame):
     cards = [
         kpi_card("📋","ic-green",  f"{n:,}",           "Total Findings",
                  f"{open_ct} open · {closed_ct} closed", "b-gray"),
-        kpi_card("🚨","ic-red",    str(open_high),      "Critical Issues Requiring Action",
-                 f"{open_high} high-risk findings still open" if open_high > 0 else "No open high-risk findings",
+        kpi_card("🚨","ic-red",    str(open_high),      "High-risk findings still open",
+                 "Immediate escalation needed" if open_high > 0 else "None open",
                  "b-red" if open_high > 5 else "b-orange" if open_high > 0 else "b-green"),
         kpi_card("🔁","ic-orange", f"{repeat_pct:.1f}%","Recurring Issues (Systemic Risk)",
                  f"{repeat_ct} of {n} not remediated",
