@@ -1059,8 +1059,7 @@ with tab_overview:
 
     # ── Top 3 priority cards ───────────────────────────────────────────────────
     spacer()
-    st.markdown('<div class="priority-header">Top Priority Bureaus — Ranked by Risk Exposure</div>',
-                unsafe_allow_html=True)
+    section("Top Priority Bureaus — Ranked by Risk Exposure")
     render_priority_cards(ranked, df)
 
     # ── Programs driving risk ──────────────────────────────────────────────────
@@ -1088,8 +1087,21 @@ with tab_landscape:
 
     # ── All divisions ranked bar ───────────────────────────────────────────────
     section("All Divisions Ranked by Risk Score",
-            "Weighted average of bureau risk scores within each division. "
-            "Red = high risk, amber = medium, green = lower risk.")
+            "Weighted average of bureau risk scores within each division.")
+
+    # Inline legend
+    st.markdown("""
+    <div style="display:flex;gap:18px;margin:-6px 0 14px 0;align-items:center">
+        <span style="display:flex;align-items:center;gap:5px;font-size:0.72rem;font-weight:600;color:#475569">
+            <span style="width:11px;height:11px;border-radius:2px;background:#EF4444;display:inline-block"></span>High Risk
+        </span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:0.72rem;font-weight:600;color:#475569">
+            <span style="width:11px;height:11px;border-radius:2px;background:#F59E0B;display:inline-block"></span>Medium Risk
+        </span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:0.72rem;font-weight:600;color:#475569">
+            <span style="width:11px;height:11px;border-radius:2px;background:#10B981;display:inline-block"></span>Low Risk
+        </span>
+    </div>""", unsafe_allow_html=True)
 
     div_ranked = (
         ranked.groupby("Division")
@@ -1104,18 +1116,19 @@ with tab_landscape:
     div_ranked["Risk Tier"] = div_ranked["Risk Score"].apply(
         lambda s: "High" if s >= 60 else ("Medium" if s >= 35 else "Low")
     )
-    def _div_label(row):
+    div_ranked_plot = div_ranked.sort_values("Risk Score", ascending=True)
+
+    # Right-side annotation text: score + high-risk callout where applicable
+    def _bar_annotation(row):
         n = int(row["High Risk Count"])
         if n == 0:
-            return row["Division"]
+            return f"  {row['Risk Score']:.0f}"
         noun = "high-risk bureau" if n == 1 else "high-risk bureaus"
-        return f"{row['Division']}  ({n} {noun})"
-    div_ranked["Label"] = div_ranked.apply(_div_label, axis=1)
-    div_ranked_plot = div_ranked.sort_values("Risk Score", ascending=True)
+        return f"  {row['Risk Score']:.0f}    {n} {noun}"
 
     fig_div = go.Figure(go.Bar(
         x=div_ranked_plot["Risk Score"],
-        y=div_ranked_plot["Label"],
+        y=div_ranked_plot["Division"],
         orientation="h",
         marker_color=[TIER_CLR[t] for t in div_ranked_plot["Risk Tier"]],
         marker_line_width=0,
@@ -1124,14 +1137,31 @@ with tab_landscape:
         textfont=dict(color="white", size=12, family="Inter"),
         customdata=div_ranked_plot[["Risk Tier", "Bureau Count", "High Risk Count"]].values,
         hovertemplate=(
-            "<b>%{customdata[0]} Risk</b> — Score %{x:.1f}<br>"
+            "<b>%{y}</b> — %{customdata[0]} Risk<br>"
+            "Score: %{x:.1f}<br>"
             "Total bureaus: %{customdata[1]}<br>"
             "High-risk bureaus: %{customdata[2]}<extra></extra>"
         ),
     ))
+
+    # Add right-side annotations for high-risk callouts
+    for _, row in div_ranked_plot.iterrows():
+        n = int(row["High Risk Count"])
+        if n > 0:
+            noun = "high-risk bureau" if n == 1 else "high-risk bureaus"
+            fig_div.add_annotation(
+                x=row["Risk Score"],
+                y=row["Division"],
+                text=f"<b>{n} {noun}</b>",
+                showarrow=False,
+                xanchor="left",
+                xshift=8,
+                font=dict(size=11, color="#991B1B", family="Inter"),
+            )
+
     fig_div.update_layout(
         **chart_base(height=max(180, len(div_ranked_plot) * 44 + 40),
-                     margin=dict(l=310, r=60, t=10, b=10)),
+                     margin=dict(l=230, r=200, t=10, b=10)),
         xaxis=dict(range=[0, 105], showgrid=True, gridcolor="#F1F5F9",
                    title=dict(text="Risk Score (0–100)", font=dict(size=14, color="#111111")),
                    tickfont=dict(size=12, color="#111111")),
